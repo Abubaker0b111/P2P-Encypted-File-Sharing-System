@@ -3,15 +3,17 @@
 #include<unistd.h>
 #include<sys/socket.h>
 #include<arpa/inet.h>
+#include<cstdio>
 
 #define PORT 8080
 #define SERVER_IP "127.0.0.1"
+#define BUFFER_SIZE 1024
 
 int main(){
     int sockfd;
     struct sockaddr_in server_addr, client_addr;
 
-    const char* hello = "Hello this is a msg from sender!\n";
+    char buffer[BUFFER_SIZE];
 
     if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
         perror("Socket Creation Error\n");
@@ -27,9 +29,17 @@ int main(){
         return -1;
     }
 
-    sendto(sockfd, hello, strlen(hello), MSG_CONFIRM, (const struct sockaddr*)&server_addr, sizeof(server_addr));
+    while(true){
 
-    std::cout<<"MSG Sent.\n";
+        std::cout<<"Enter message: ";
+
+        std::fgets(buffer, BUFFER_SIZE, stdin);
+
+        sendto(sockfd, buffer, strlen(buffer), MSG_CONFIRM, (const struct sockaddr*)&server_addr, sizeof(server_addr));
+
+        std::cout<<"MSG Sent.\n";
+        if(buffer[0] == 'q') break;
+    }
 
     close(sockfd);
 

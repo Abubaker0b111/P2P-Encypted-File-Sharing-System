@@ -29,13 +29,13 @@ int main(){
 
     std::cout<<"Receiver is listening on Port "<<PORT<<"..."<<std::endl;
     int n = 0;
-    while(n <= 0){
+    while(1){
 
         socklen_t len = sizeof(client_addr);
 
         n = recvfrom(sockfd, (char *)buffer, BUFFER_SIZE, MSG_WAITALL, (struct sockaddr *)&client_addr, &len);
         buffer[n] = '\0';
-
+        if(buffer[0] == 'q') break;
         std::cout<<"Received: "<< buffer << std::endl;
     }
     close(sockfd);
