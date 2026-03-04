@@ -4,6 +4,9 @@
 #include<sys/socket.h>
 #include<arpa/inet.h>
 #include<cstdio>
+#include"packet.h"
+#include<thread>
+#include<chrono>
 
 #define PORT 8080
 #define SERVER_IP "127.0.0.1"
@@ -12,8 +15,6 @@
 int main(){
     int sockfd;
     struct sockaddr_in server_addr, client_addr;
-
-    char buffer[BUFFER_SIZE];
 
     if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
         perror("Socket Creation Error\n");
@@ -29,17 +30,33 @@ int main(){
         return -1;
     }
 
-    while(true){
+    Packet syn_pkt;
 
-        std::cout<<"Enter message: ";
+    memset(&syn_pkt, 0, sizeof(syn_pkt));
+    syn_pkt.header.flags = SYN;
 
-        std::fgets(buffer, BUFFER_SIZE, stdin);
+    std::cout<<"Sending SYN...\n";
 
-        sendto(sockfd, buffer, strlen(buffer), MSG_CONFIRM, (const struct sockaddr*)&server_addr, sizeof(server_addr));
+    sendto(sockfd, &syn_pkt, sizeof(Header), 0, (const struct sockaddr *)&server_addr, sizeof(server_addr));
 
-        std::cout<<"MSG Sent.\n";
-        if(buffer[0] == 'q') break;
-    }
+    Packet reply;
+
+    memset(&reply, 0, sizeof(reply));
+    socklen_t len = sizeof(server_addr);
+
+    int n = recvfrom(sockfd, &reply, sizeof(reply), 0, (struct sockaddr *)&server_addr, &len);
+
+    if(n > 0 && reply.header.flags == (SYN | ACK)){
+        std::cout << "Received SYN-ACK. Sending final ACK...\n";
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        Packet ack_pkt;
+        memset(&ack_pkt, 0, sizeof(ack_pkt));
+        ack_pkt.header.flags = ACK;
+        
+        sendto(sockfd, &ack_pkt, sizeof(Header), 0, (const struct sockaddr *)&server_addr, sizeof(server_addr));
+        
+        std::cout << "Connection ESTABLISHED!" << std::endl;
+        }
 
     close(sockfd);
 

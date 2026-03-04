@@ -3,6 +3,9 @@
 #include<sys/socket.h>
 #include<arpa/inet.h>
 #include<unistd.h>
+#include"packet.h"
+#include<thread>
+#include<chrono>
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
@@ -10,7 +13,7 @@
 int main(){
     int sockfd; //socket file descriptor
     struct sockaddr_in server_addr, client_addr;
-    char buffer[BUFFER_SIZE];
+    Packet buffer;
 
     if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
         perror("Socket Creation Failed!\n");
@@ -33,11 +36,24 @@ int main(){
 
         socklen_t len = sizeof(client_addr);
 
-        n = recvfrom(sockfd, (char *)buffer, BUFFER_SIZE, MSG_WAITALL, (struct sockaddr *)&client_addr, &len);
-        buffer[n] = '\0';
-        if(buffer[0] == 'q') break;
-        std::cout<<"Received: "<< buffer << std::endl;
-    }
+        n = recvfrom(sockfd, &buffer, BUFFER_SIZE, MSG_WAITALL, (struct sockaddr *)&client_addr, &len);
+
+        uint8_t flags = buffer.header.flags;
+
+        if(flags == SYN){
+            std::cout<<"Received SYN. Sending SYN-ACK...\n";
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            Packet reply;
+            memset(&reply, 0, sizeof(reply));
+
+            reply.header.flags = SYN | ACK;
+
+            sendto(sockfd, &reply, sizeof(Header), 0, (struct sockaddr *)&client_addr, len);   
+        }
+        else if(flags == ACK){
+            std::cout<<"Received ACK. Connection Established\n";
+        }
+    }   
     close(sockfd);
     return 0;
 }
