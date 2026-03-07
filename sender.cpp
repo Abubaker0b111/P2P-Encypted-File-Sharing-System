@@ -56,7 +56,47 @@ int main(){
         sendto(sockfd, &ack_pkt, sizeof(Header), 0, (const struct sockaddr *)&server_addr, sizeof(server_addr));
         
         std::cout << "Connection ESTABLISHED!" << std::endl;
+    }
+
+    int total_packets = 5;
+
+    for(int current_seq = 1 ; current_seq <= total_packets ; current_seq++){
+        Packet data_pkt;
+
+        memset(&data_pkt, 0, sizeof(data_pkt));
+
+        data_pkt.header.flags = DATA;
+        data_pkt.header.seq_num = htonl(current_seq);
+
+        std::string msg = "This is a message for sequence number: " + std::to_string(current_seq);
+        
+        strncpy(data_pkt.payload, msg.c_str(), MAX_PAYLOAD);
+
+        size_t packet_size = sizeof(Header) + msg.length();
+
+        bool ack_received = false;
+
+        while(!ack_received){
+            std::cout<<"[Sender] Sending packet seq: "<<current_seq<<std::endl;
+            sendto(sockfd, &data_pkt, packet_size, 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
+
+            Packet ack_reply;
+            int n = recvfrom(sockfd, &ack_reply, sizeof(ack_reply), 0, (struct sockaddr *)&server_addr, &len);
+
+            if(n > 0){
+                uint8_t flags = ack_reply.header.flags;
+                uint32_t ack_num = ntohl(ack_reply.header.ack_num);
+
+                if((flags & ACK) && ack_num == current_seq){
+                    std::cout<<"[Sender] Received ACK for SEQ: "<<current_seq<<std::endl;
+                    ack_received = true;
+                }
+                else{
+                    std::cout<<"[Sender] Received Unexpected Packet\n";
+                }
+            }
         }
+    }
 
     close(sockfd);
 

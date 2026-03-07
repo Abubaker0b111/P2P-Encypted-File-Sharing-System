@@ -32,9 +32,9 @@ int main(){
 
     std::cout<<"Receiver is listening on Port "<<PORT<<"..."<<std::endl;
     int n = 0;
+    socklen_t len = sizeof(client_addr);
     while(1){
 
-        socklen_t len = sizeof(client_addr);
 
         n = recvfrom(sockfd, &buffer, BUFFER_SIZE, MSG_WAITALL, (struct sockaddr *)&client_addr, &len);
 
@@ -52,8 +52,39 @@ int main(){
         }
         else if(flags == ACK){
             std::cout<<"Received ACK. Connection Established\n";
+            break;
         }
-    }   
+    }
+    
+    while(true){
+        Packet incoming;
+
+        n = recvfrom(sockfd, &incoming, sizeof(incoming), 0, (struct sockaddr *)&client_addr, &len);
+
+        if(n > 0){
+            uint8_t flags = incoming.header.flags;
+            uint32_t seq = ntohl(incoming.header.seq_num);
+
+            if(flags & DATA){
+                int payload_len = n - sizeof(Header);
+                char msg[MAX_PAYLOAD + 1];
+                memcpy(msg, incoming.payload, payload_len);
+
+                msg[payload_len] = '\0';
+
+                std::cout<<"[Receiver] Received Packet Seq: "<<seq<<" -> "<<msg<<std::endl;
+                Packet ack_pkt;
+
+                memset(&ack_pkt, 0, sizeof(ack_pkt));
+                ack_pkt.header.flags = ACK;
+                ack_pkt.header.ack_num = htonl(seq);
+
+                std::cout<<"[Receiver] Sending the ACK...\n";
+
+                sendto(sockfd, &ack_pkt, sizeof(ack_pkt), 0, (struct sockaddr *)&client_addr, len);
+            }
+        }
+    }
     close(sockfd);
     return 0;
 }
