@@ -3,24 +3,24 @@
 
 #include<cstdint>
 
-#define DATA 0x01
-#define ACK 0x02
-#define SYN 0x04
-#define FIN 0x08
-#define MAX_PAYLOAD 1024
+#define DATA 0x01  //Flag for data packet
+#define ACK 0x02   //Flag for ACK packet 
+#define SYN 0x04   //Flag for SYN packet
+#define FIN 0x08   //Flag for FIN packet
+#define MAX_PAYLOAD 1024 //Setting default Max payload size to 1024 characters
 
-#pragma pack(1)
+#pragma pack(1) //To prevent to compiler form adding padding
 
-struct Header{
-    uint32_t seq_num;
-    uint32_t ack_num;
-    uint8_t flags;
-    uint16_t checksum;
+struct Header{  //Defining a Header structure for packets
+    uint32_t seq_num; //Sequence Number
+    uint32_t ack_num; //Acknowledgment Number
+    uint8_t flags;  //Flags for the packet
+    uint16_t checksum;  //Checksum for error detection
 };
 
 #pragma pack(pop)
 
-struct Packet{
+struct Packet{// A Packet contains the header and the payload
     Header header;
     char payload[MAX_PAYLOAD];
 };

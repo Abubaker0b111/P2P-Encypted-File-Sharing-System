@@ -7,20 +7,32 @@
 #include"packet.h"
 #include<thread>
 #include<chrono>
+#include<sys/time.h>
 
-#define PORT 8080
-#define SERVER_IP "127.0.0.1"
-#define BUFFER_SIZE 1024
+#define PORT 8080 // setting the default port to 8080
+#define SERVER_IP "127.0.0.1" //Setting the server ip address. It as the same as this device for now
+#define BUFFER_SIZE 1024// Setting the default buffer size to 1024 characters
 
 int main(){
     int sockfd;
     struct sockaddr_in server_addr, client_addr;
 
-    if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
+    struct timeval tv;
+    //Setting timeout values
+    tv.tv_sec = 1;  // 1 second
+    tv.tv_usec = 0; //0 milisecond
+
+    if((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){//Creating the socket
         perror("Socket Creation Error\n");
         return -1;
     }
 
+    if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0){//Setting up the socket to timeout after the given time value
+        perror("Error setting timeout\n");
+        return -1;
+    }
+
+    //setting the ip address type and port for the server address
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(PORT);
@@ -35,31 +47,50 @@ int main(){
     memset(&syn_pkt, 0, sizeof(syn_pkt));
     syn_pkt.header.flags = SYN;
 
-    std::cout<<"Sending SYN...\n";
+    bool established = false;
 
-    sendto(sockfd, &syn_pkt, sizeof(Header), 0, (const struct sockaddr *)&server_addr, sizeof(server_addr));
+    int req_limit = 10;
 
-    Packet reply;
+    while(!established && req_limit > 0){// Trying to establish a three way handshake before communicating
 
-    memset(&reply, 0, sizeof(reply));
-    socklen_t len = sizeof(server_addr);
+        std::cout<<"Sending SYN...\n";
 
-    int n = recvfrom(sockfd, &reply, sizeof(reply), 0, (struct sockaddr *)&server_addr, &len);
+        sendto(sockfd, &syn_pkt, sizeof(Header), 0, (const struct sockaddr *)&server_addr, sizeof(server_addr));//Sending the initial SYN packet
 
-    if(n > 0 && reply.header.flags == (SYN | ACK)){
-        std::cout << "Received SYN-ACK. Sending final ACK...\n";
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-        Packet ack_pkt;
-        memset(&ack_pkt, 0, sizeof(ack_pkt));
-        ack_pkt.header.flags = ACK;
-        
-        sendto(sockfd, &ack_pkt, sizeof(Header), 0, (const struct sockaddr *)&server_addr, sizeof(server_addr));
-        
-        std::cout << "Connection ESTABLISHED!" << std::endl;
+        Packet reply;
+
+        memset(&reply, 0, sizeof(reply));
+        socklen_t len = sizeof(server_addr);
+
+        int n = recvfrom(sockfd, &reply, sizeof(reply), 0, (struct sockaddr *)&server_addr, &len);//Waiting for the subsequent SYN-ACK reply
+
+        if(n > 0 && reply.header.flags == (SYN | ACK)){
+            std::cout << "Received SYN-ACK. Sending final ACK...\n";
+            std::this_thread::sleep_for(std::chrono::seconds(2));//Adding artificial delay for observing the handshake process in real time
+            Packet ack_pkt;
+            memset(&ack_pkt, 0, sizeof(ack_pkt));
+            ack_pkt.header.flags = ACK;
+            
+            sendto(sockfd, &ack_pkt, sizeof(Header), 0, (const struct sockaddr *)&server_addr, sizeof(server_addr));//Sending the final ACK response
+            
+            std::cout << "Connection ESTABLISHED!" << std::endl;
+            established = true;
+        }
+        else{//Invoking Timeout if no Reply is received within the time limit
+            std::cout<<"[Sender] ACK Timeout! Retransmitting SYN request"<<std::endl;
+            req_limit--;
+        }
     }
+
+    if(req_limit <= 0){//Ends the program if too many Timeouts occur
+        std::cout<<"[Sender] Request Limit Exceeded! Could not connect to server\n";
+        return -1;
+    }
+    
 
     int total_packets = 5;
 
+    /*Test the sequence logic by sending 5 packets in sequence and waitng for the response*/
     for(int current_seq = 1 ; current_seq <= total_packets ; current_seq++){
         Packet data_pkt;
 
@@ -76,12 +107,14 @@ int main(){
 
         bool ack_received = false;
 
-        while(!ack_received){
+        while(!ack_received){// Keeps retransmitting the packet untill the approprite ACK is received
+            int n = 0;
             std::cout<<"[Sender] Sending packet seq: "<<current_seq<<std::endl;
-            sendto(sockfd, &data_pkt, packet_size, 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
+            sendto(sockfd, &data_pkt, packet_size, 0, (struct sockaddr *)&server_addr, sizeof(server_addr));//Sending the initial DATA packet
 
             Packet ack_reply;
-            int n = recvfrom(sockfd, &ack_reply, sizeof(ack_reply), 0, (struct sockaddr *)&server_addr, &len);
+            socklen_t len = sizeof(server_addr);
+            n = recvfrom(sockfd, &ack_reply, sizeof(ack_reply), 0, (struct sockaddr *)&server_addr, &len);//Waiting for the subsequene response
 
             if(n > 0){
                 uint8_t flags = ack_reply.header.flags;
@@ -95,9 +128,11 @@ int main(){
                     std::cout<<"[Sender] Received Unexpected Packet\n";
                 }
             }
+            else{
+                std::cout<<"[Sender] Timeout! Retransmitting Packet Sequence: "<<current_seq<<std::endl;
+            }
         }
     }
-
     close(sockfd);
 
     return 0;
