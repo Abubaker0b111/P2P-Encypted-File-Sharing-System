@@ -44,7 +44,7 @@ int main(){
 
         if(flags == SYN){ //If the packet is a SYN packet then we send an ACK back
             std::cout<<"Received SYN. Sending SYN-ACK...\n";
-            std::this_thread::sleep_for(std::chrono::seconds(2));//Adding an artificial delay so the handshake process can be seen in real time
+            //std::this_thread::sleep_for(std::chrono::seconds(2));//Adding an artificial delay so the handshake process can be seen in real time
             Packet reply;
             memset(&reply, 0, sizeof(reply));
 
@@ -64,17 +64,24 @@ int main(){
         n = recvfrom(sockfd, &incoming, sizeof(incoming), 0, (struct sockaddr *)&client_addr, &len);// Waintng for incoming packets
 
         if(n > 0){
+
+            int corruption_chance = rand()%10 + 1;
+
+            if(corruption_chance <= 2){
+                incoming.payload[0] ^= 0xff;
+            }
+
+            uint16_t validation = calculate_checksum(&incoming, n);
+            std::cout<<"Received checksum: "<<validation<<std::endl;
+            if(validation != 0){
+                std::cout<<"Checksum Failed! Packet is corrupted\nDropping Packet\n";
+                continue;
+            }
+
             uint8_t flags = incoming.header.flags;// Reading the flags for the packet
             uint32_t seq = ntohl(incoming.header.seq_num);// Reading the sequence number of the packet
 
             if(flags & DATA){
-
-                int dropChance = rand()%10 + 1;
-
-                if(dropChance <= 3){// Randomly dropping 30% of the packets to test timeout
-                    std::cout<<"[Receiver] Deliberately dropping packet Sequence: "<<seq<<std::endl;
-                    continue;
-                }
 
                 int payload_len = n - sizeof(Header);
                 char msg[MAX_PAYLOAD + 1];

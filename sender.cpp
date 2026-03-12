@@ -105,12 +105,21 @@ int main(){
 
         size_t packet_size = sizeof(Header) + msg.length();
 
-        bool ack_received = false;
+        uint checksum = calculate_checksum(&data_pkt, packet_size);
 
+        std::cout<<"[Sender] Sending packet with CheckSum: "<<checksum<<std::endl;
+        data_pkt.header.checksum = checksum;
+
+        bool ack_received = false;
+        bool need_transmission = true;
         while(!ack_received){// Keeps retransmitting the packet untill the approprite ACK is received
             int n = 0;
-            std::cout<<"[Sender] Sending packet seq: "<<current_seq<<std::endl;
-            sendto(sockfd, &data_pkt, packet_size, 0, (struct sockaddr *)&server_addr, sizeof(server_addr));//Sending the initial DATA packet
+
+            if(need_transmission){
+                std::cout<<"[Sender] Sending packet seq: "<<current_seq<<std::endl;
+                sendto(sockfd, &data_pkt, packet_size, 0, (struct sockaddr *)&server_addr, sizeof(server_addr));//Sending the initial DATA packet
+                need_transmission = false;
+            }
 
             Packet ack_reply;
             socklen_t len = sizeof(server_addr);
@@ -130,6 +139,7 @@ int main(){
             }
             else{
                 std::cout<<"[Sender] Timeout! Retransmitting Packet Sequence: "<<current_seq<<std::endl;
+                need_transmission = true;
             }
         }
     }

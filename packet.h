@@ -25,4 +25,32 @@ struct Packet{// A Packet contains the header and the payload
     char payload[MAX_PAYLOAD];
 };
 
+uint16_t calculate_checksum(void* vdata, size_t length){
+    char *data = (char*)vdata;
+    uint32_t acc = 0xffff;
+
+    for(size_t i = 0 ; i<length ; i += 2){// Adding one word at a time
+        uint16_t word = 0;
+        memcpy(&word, data+i, 2);
+        acc += ntohs(word);
+
+        if(acc > 0xffff){
+            acc -= 0xffff;
+        }
+    }
+
+    if(length & 1){//Accounting for the last byte if the length is odd
+        uint16_t word = 0;
+        memcpy(&word, data + length -1 , 1);
+
+        acc += word;
+
+        if(acc > 0xffff){
+            acc -= 0xffff;
+        }
+    }
+
+    return (~acc);
+}
+
 #endif
