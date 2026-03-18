@@ -2,6 +2,12 @@
 #define  PACKET_H
 
 #include<cstdint>
+#include<iostream>
+#include<cstring>
+#include<unistd.h>
+#include<sys/socket.h>
+#include<arpa/inet.h>
+#include<cstdio>
 
 #define DATA 0x01  //Flag for data packet
 #define ACK 0x02   //Flag for ACK packet 
@@ -24,33 +30,5 @@ struct Packet{// A Packet contains the header and the payload
     Header header;
     char payload[MAX_PAYLOAD];
 };
-
-uint16_t calculate_checksum(void* vdata, size_t length){
-    char *data = (char*)vdata;
-    uint32_t acc = 0xffff;
-
-    for(size_t i = 0 ; i<length ; i += 2){// Adding one word at a time
-        uint16_t word = 0;
-        memcpy(&word, data+i, 2);
-        acc += ntohs(word);
-
-        if(acc > 0xffff){
-            acc -= 0xffff;
-        }
-    }
-
-    if(length & 1){//Accounting for the last byte if the length is odd
-        uint16_t word = 0;
-        memcpy(&word, data + length -1 , 1);
-
-        acc += word;
-
-        if(acc > 0xffff){
-            acc -= 0xffff;
-        }
-    }
-
-    return (~acc);
-}
 
 #endif
