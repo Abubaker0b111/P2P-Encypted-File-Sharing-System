@@ -15,7 +15,7 @@
 #define FIN 0x08   //Flag for FIN packet
 #define MAX_PAYLOAD 1024 //Setting default Max payload size to 1024 characters
 
-#pragma pack(1) //To prevent to compiler form adding padding
+#pragma pack(push, 1) //To prevent to compiler form adding padding
 
 struct Header{  //Defining a Header structure for packets
     uint32_t seq_num; //Sequence Number

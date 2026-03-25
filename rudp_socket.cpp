@@ -112,8 +112,21 @@ bool RUDPSocket::Connect(const std::string& ip, int port){
     return true;
 }
 
+void RUDPSocket::Attach(int socket_fd, struct sockaddr_in peer_addr){
+    this->sockfd = socket_fd;
+    this->targetAddr = peer_addr;
+    this->target_len = sizeof(peer_addr);
+
+    this->current_seq = 1;
+    this->expected_seq = 1;
+
+    setTimeout(1);
+
+    std::cout<<"[RUDP Socket] Successfully attached socket\n";
+}
+
 bool RUDPSocket::Bind(int port){
-    targetAddr.sin_port = htons(port); //Setting the port after convert it from host to network format
+    targetAddr.sin_port = htons(port); //Setting the port after converting it from host to network format
 
     if(bind(sockfd, (const struct sockaddr *)&targetAddr, sizeof(targetAddr)) < 0){// Binding the socket to the specific address and port
         perror("Bind Failed!\n");
@@ -123,7 +136,7 @@ bool RUDPSocket::Bind(int port){
 }
 
 bool RUDPSocket::Accept(){
-    std::cout<<"\nWaiting for Client"<<std::flush;
+    std::cout<<"\nWaiting for Request"<<std::flush;
     Packet buffer;
     int n = 0;
     while(1){// Establishing a connection with the connection using a three way handshake
@@ -158,7 +171,7 @@ int RUDPSocket::Send(const char* data, size_t length){
     data_pkt.header.flags = DATA;
     data_pkt.header.seq_num = htonl(current_seq);
     
-    strncpy(data_pkt.payload, data, length);
+    memcpy(data_pkt.payload, data, length);
 
     size_t packet_size = sizeof(Header) + length;
 
@@ -199,38 +212,41 @@ int RUDPSocket::Send(const char* data, size_t length){
 int RUDPSocket::Receive(char* buffer, size_t max_len){
     Packet incoming;
     int copy_len = 0;
-    setTimeout(3600);
-    int n = recvfrom(sockfd, &incoming, sizeof(incoming), 0, (struct sockaddr *)&targetAddr, &target_len);// Waintng for incoming packets
-    setTimeout(1);
-    if(n > 0){
+    bool received = false;
+    while(!received){
+        setTimeout(3600);
+        int n = recvfrom(sockfd, &incoming, sizeof(incoming), 0, (struct sockaddr *)&targetAddr, &target_len);// Waintng for incoming packets
+        setTimeout(1);
+        if(n > 0){
 
-        uint16_t validation = calculate_checksum(&incoming, n);
-        if(validation != 0){
-            return -1;
-        }
-
-        uint8_t flags = incoming.header.flags;// Reading the flags for the packet
-        uint32_t seq = ntohl(incoming.header.seq_num);// Reading the sequence number of the packet
-
-        if(flags & DATA){
-
-            if(seq == expected_seq){
-                int payload_len = n - sizeof(Header);
-                copy_len = (max_len > payload_len) ? payload_len : max_len - 1;
-
-                memcpy(buffer, incoming.payload, copy_len);
-                buffer[copy_len] = '\0';
-                expected_seq++;
+            uint16_t validation = calculate_checksum(&incoming, n);
+            if(validation != 0){
+                continue;
             }
 
-            Packet ack_pkt;
+            uint8_t flags = incoming.header.flags;// Reading the flags for the packet
+            uint32_t seq = ntohl(incoming.header.seq_num);// Reading the sequence number of the packet
 
-            memset(&ack_pkt, 0, sizeof(ack_pkt));
-            ack_pkt.header.flags = ACK;
-            ack_pkt.header.ack_num = htonl(seq);
-            //std::cout<<"sending ack "<<seq<<std::endl;
-            sendto(sockfd, &ack_pkt, sizeof(ack_pkt), 0, (struct sockaddr *)&targetAddr, target_len);// Sending the appropriate ack sequence back
+            if(flags & DATA){
+
+                if(seq == expected_seq){
+                    int payload_len = n - sizeof(Header);
+                    copy_len = (max_len > payload_len) ? payload_len : max_len;
+
+                    memcpy(buffer, incoming.payload, copy_len);
+                    expected_seq++;
+                }
+
+                Packet ack_pkt;
+
+                memset(&ack_pkt, 0, sizeof(ack_pkt));
+                ack_pkt.header.flags = ACK;
+                ack_pkt.header.ack_num = htonl(seq);
+                //std::cout<<"sending ack "<<seq<<std::endl;
+                sendto(sockfd, &ack_pkt, sizeof(ack_pkt), 0, (struct sockaddr *)&targetAddr, target_len);// Sending the appropriate ack sequence back
+                received = true;
+            }
         }
-    }
+    }    
     return copy_len;
 }

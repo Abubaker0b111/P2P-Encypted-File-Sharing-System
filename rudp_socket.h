@@ -30,6 +30,7 @@ class RUDPSocket{
         bool Accept();
 
         bool Connect(const std::string& ip, int port);
+        void Attach(int socket_fd, struct sockaddr_in peer_addr);
 
         int Send(const char* data, size_t length);
         int Receive(char* buffer, size_t max_len);
