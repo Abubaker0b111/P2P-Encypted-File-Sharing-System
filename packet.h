@@ -21,6 +21,7 @@ struct Header{  //Defining a Header structure for packets
     uint32_t seq_num; //Sequence Number
     uint32_t ack_num; //Acknowledgment Number
     uint8_t flags;  //Flags for the packet
+    uint8_t reserved; //Empty byte used for padding
     uint16_t checksum;  //Checksum for error detection
 };
 

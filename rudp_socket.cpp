@@ -19,32 +19,31 @@ RUDPSocket::~RUDPSocket(){
     close(sockfd);
 }
 
+//Divides the entire data into 16 bit chunks and adds them to calculate checksum
 uint16_t RUDPSocket::calculate_checksum(void* vdata, size_t length){
-    char *data = (char*)vdata;
-    uint32_t acc = 0xffff;
+    uint8_t* data = (uint8_t*)vdata;
+    uint32_t acc = 0;
 
-    for(size_t i = 0 ; i<length ; i += 2){// Adding one word at a time
-        uint16_t word = 0;
-        memcpy(&word, data+i, 2);
+    //Adding 1 16 bit word at a time
+    for(size_t i = 0; i + 1 < length; i += 2){
+        uint16_t word;
+        memcpy(&word, data + i, 2);
         acc += ntohs(word);
-
-        if(acc > 0xffff){
-            acc -= 0xffff;
-        }
     }
 
-    if(length & 1){//Accounting for the last byte if the length is odd
+    // Safely handle the leftover odd byte
+    if(length % 2 != 0) {
         uint16_t word = 0;
-        memcpy(&word, data + length -1 , 1);
-
+        word = data[length - 1] << 8; 
         acc += word;
-
-        if(acc > 0xffff){
-            acc -= 0xffff;
-        }
     }
 
-    return (~acc);
+    //Compressing the result to 16 bit
+    while(acc >> 16){
+        acc = (acc & 0xFFFF) + (acc >> 16);
+    }
+
+    return htons(~acc);
 }
 
 void RUDPSocket::setTimeout(int seconds){
@@ -58,6 +57,7 @@ void RUDPSocket::setTimeout(int seconds){
     }
 }
 
+//Connect to the provided IP:Port if available
 bool RUDPSocket::Connect(const std::string& ip, int port){
     targetAddr.sin_port = htons(port);
 
@@ -73,7 +73,7 @@ bool RUDPSocket::Connect(const std::string& ip, int port){
 
     bool established = false;
 
-    int req_limit = 10;
+    int req_limit = 10; // Request Limit
 
     while(!established && req_limit > 0){// Trying to establish a three way handshake before communicating
 
@@ -112,6 +112,7 @@ bool RUDPSocket::Connect(const std::string& ip, int port){
     return true;
 }
 
+//Attaches a pre Existing socket to the given address and port
 void RUDPSocket::Attach(int socket_fd, struct sockaddr_in peer_addr){
     this->sockfd = socket_fd;
     this->targetAddr = peer_addr;
@@ -170,10 +171,38 @@ int RUDPSocket::Send(const char* data, size_t length){
 
     data_pkt.header.flags = DATA;
     data_pkt.header.seq_num = htonl(current_seq);
-    
-    memcpy(data_pkt.payload, data, length);
+    data_pkt.header.checksum = 0;
+    size_t payload_len = length;
 
-    size_t packet_size = sizeof(Header) + length;
+    if(secure_mode){
+        //Generate a random 24-byte Nonce
+        unsigned char nonce[crypto_aead_xchacha20poly1305_ietf_NPUBBYTES];
+        randombytes_buf(nonce, sizeof(nonce));
+        
+        //Prepare the Associated Data (The Header)
+        unsigned char* ad = (unsigned char*)&data_pkt.header;
+        unsigned long long ad_len = sizeof(Header);
+
+        //Encrypt! (Ciphertext goes into the payload buffer AFTER the 24-byte nonce space)
+        unsigned long long ciphertext_len;
+        crypto_aead_xchacha20poly1305_ietf_encrypt(
+            (unsigned char*)data_pkt.payload + sizeof(nonce), &ciphertext_len, // Destination
+            (const unsigned char*)data, length,                                // Source
+            ad, ad_len,                                                        // Associated Data
+            NULL, nonce, tx_key                                                // Keys & Nonce
+            );
+
+        //Prepend the Nonce so the receiver knows what it is
+        memcpy(data_pkt.payload, nonce, sizeof(nonce));
+
+        //Update the length (Original + 24 byte Nonce + 16 byte MAC tag)
+        payload_len = sizeof(nonce) + ciphertext_len;
+    }
+    else{
+        memcpy(data_pkt.payload, data, length);
+    }
+
+    size_t packet_size = sizeof(Header) + payload_len;
 
     uint16_t checksum = calculate_checksum(&data_pkt, packet_size);
 
@@ -211,6 +240,7 @@ int RUDPSocket::Send(const char* data, size_t length){
 
 int RUDPSocket::Receive(char* buffer, size_t max_len){
     Packet incoming;
+    memset(&incoming, 0, sizeof(incoming));
     int copy_len = 0;
     bool received = false;
     while(!received){
@@ -221,8 +251,11 @@ int RUDPSocket::Receive(char* buffer, size_t max_len){
 
             uint16_t validation = calculate_checksum(&incoming, n);
             if(validation != 0){
+                std::cout<<"Checksum Failed\n";
                 continue;
             }
+
+            incoming.header.checksum = 0;
 
             uint8_t flags = incoming.header.flags;// Reading the flags for the packet
             uint32_t seq = ntohl(incoming.header.seq_num);// Reading the sequence number of the packet
@@ -231,9 +264,40 @@ int RUDPSocket::Receive(char* buffer, size_t max_len){
 
                 if(seq == expected_seq){
                     int payload_len = n - sizeof(Header);
-                    copy_len = (max_len > payload_len) ? payload_len : max_len;
 
-                    memcpy(buffer, incoming.payload, copy_len);
+                    if(secure_mode){
+                        //Extract the Nonce (first 24 bytes of the payload)
+                        unsigned char nonce[crypto_aead_xchacha20poly1305_ietf_NPUBBYTES];
+                        memcpy(nonce, incoming.payload, sizeof(nonce));
+
+                        //Identify the Ciphertext
+                        unsigned char* ciphertext = (unsigned char*)incoming.payload + sizeof(nonce);
+                        unsigned long long ciphertext_len = payload_len - sizeof(nonce);
+
+                        //Prepare the Associated Data (The Header)
+                        unsigned char* ad = (unsigned char*)&incoming.header;
+                        unsigned long long ad_len = sizeof(Header);
+
+                        //Decrypt!
+                        unsigned long long decrypted_len;
+                        if(crypto_aead_xchacha20poly1305_ietf_decrypt(
+                            (unsigned char*)buffer, &decrypted_len,  // Destination buffer
+                            NULL,
+                            ciphertext, ciphertext_len,              // Source
+                            ad, ad_len,                              // Associated Data
+                            nonce, rx_key                            // Keys & Nonce
+                            ) != 0){
+                            std::cout << "[Crypto] ALERT: Forged or corrupted packet dropped!" << std::endl;
+                            continue; // Drop packet, don't send ACK!
+                        }
+                        
+                        copy_len = decrypted_len; // Set the output length for the user
+                    }
+                    else{
+                        copy_len = (max_len > payload_len) ? payload_len : max_len;
+                        memcpy(buffer, incoming.payload, copy_len);
+                    }
+
                     expected_seq++;
                 }
 
@@ -249,4 +313,11 @@ int RUDPSocket::Receive(char* buffer, size_t max_len){
         }
     }    
     return copy_len;
+}
+
+void RUDPSocket::EnableEncryption(const unsigned char* tx, const unsigned char* rx){
+    memcpy(this->tx_key, tx, crypto_kx_SESSIONKEYBYTES);
+    memcpy(this->rx_key, rx, crypto_kx_SESSIONKEYBYTES);
+    this->secure_mode = true;
+    std::cout << "[RUDP] Secure Mode Enabled. All traffic is now encrypted." << std::endl;
 }

@@ -135,9 +135,7 @@ int main(int argc, char *argv[]){
     }
     if(connected){
         RUDPSocket rudp_sock;
-        
         //Now we update or raw socket to reliable udp socket
-        //Hand over the raw socket and the peer's public address
         rudp_sock.Attach(sockfd, peerAddr);
 
         std::cout<<"\n[Crypto] Initiating Elliptic-Curve Key Exchange..."<<std::endl;
@@ -151,13 +149,14 @@ int main(int argc, char *argv[]){
         memset(peer_pk , 0 , sizeof(peer_pk));
 
         //Exchanging Public Keys 
-        if (command == "CONNECT") {
+        if(command == "CONNECT"){
             std::cout<<"[Crypto] Sending my Public Key..."<<std::endl;
             rudp_sock.Send((const char*)my_pk, crypto_kx_PUBLICKEYBYTES);//Sending our public key
             
             std::cout<<"[Crypto] Waiting for Peer's Public Key..."<<std::endl;
             rudp_sock.Receive((char*)peer_pk, crypto_kx_PUBLICKEYBYTES);//Receiving the public key of the other peer
-        } else if (command == "WAIT") {
+        } 
+        else if(command == "WAIT"){
             std::cout<<"[Crypto] Waiting for Peer's Public Key..."<<std::endl;
             rudp_sock.Receive((char*)peer_pk, crypto_kx_PUBLICKEYBYTES);//Waiting for the caller's public key
             
@@ -185,9 +184,29 @@ int main(int argc, char *argv[]){
         }
 
         std::cout<<"[Crypto] SUCCESS! Secure Session Keys generated."<<std::endl;
+        rudp_sock.EnableEncryption(tx, rx);
         
-        std::cout<<"My TX Key starts with: "<<std::hex<<(int)tx[0]<<(int)tx[1]<<(int)tx[2]<<std::dec<<std::endl;
-        std::cout<<"My RX Key starts with: "<<std::hex<<(int)rx[0]<<(int)rx[1]<<(int)rx[2]<<std::dec<<std::endl;
+        int i=1;
+        if(command == "CONNECT"){
+            for(int i=1 ; i<=5 ; i++){
+                std::string msg = "A very secret message #" + std::to_string(i);
+                rudp_sock.Send(msg.c_str(), msg.length());
+            }
+        }
+        else{
+            while(i<=5){
+                char msg[1024];
+                int length = rudp_sock.Receive(msg,1024);
+                msg[length] = '\0';
+
+                std::cout<<i<<": "<<msg<<std::endl;
+                i++;
+            }
+        }
+        
+        //std::cout<<"My TX Key starts with: "<<std::hex<<(int)tx[0]<<(int)tx[1]<<(int)tx[2]<<std::dec<<std::endl;
+        //std::cout<<"My RX Key starts with: "<<std::hex<<(int)rx[0]<<(int)rx[1]<<(int)rx[2]<<std::dec<<std::endl;
+
         
         //Wiping the keys from memory after use
         sodium_memzero(my_sk, sizeof(my_sk));

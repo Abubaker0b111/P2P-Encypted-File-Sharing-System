@@ -9,6 +9,7 @@
 #include<cstdio>
 #include<cstdint>
 #include"packet.h"
+#include<sodium.h>
 
 
 class RUDPSocket{
@@ -19,6 +20,10 @@ class RUDPSocket{
 
         uint32_t current_seq;
         uint32_t expected_seq;
+
+        unsigned char tx_key[crypto_kx_SESSIONKEYBYTES];//transmission key
+        unsigned char rx_key[crypto_kx_SESSIONKEYBYTES];//receiving key
+        bool secure_mode = false;
 
         uint16_t calculate_checksum(void* vdata, size_t length);
         void setTimeout(int seconds);
@@ -34,6 +39,8 @@ class RUDPSocket{
 
         int Send(const char* data, size_t length);
         int Receive(char* buffer, size_t max_len);
+
+        void EnableEncryption(const unsigned char* tx, const unsigned char* rx);
 };
 
 #endif
