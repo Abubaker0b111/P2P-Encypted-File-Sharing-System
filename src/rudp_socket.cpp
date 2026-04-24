@@ -5,6 +5,7 @@ RUDPSocket::RUDPSocket(){
         perror("Socket Creation Error!\n");
         return;
     }
+    own_sock = true;
     memset(&targetAddr, 0, sizeof(targetAddr));
     targetAddr.sin_family = AF_INET; //Setting the ip address type as ipv4
     targetAddr.sin_addr.s_addr = INADDR_ANY; //Setting the input so that the server listens for input from all available channels
@@ -16,7 +17,9 @@ RUDPSocket::RUDPSocket(){
 }
 
 RUDPSocket::~RUDPSocket(){
-    close(sockfd);
+    if(own_sock){
+        close(sockfd);
+    }
 }
 
 //Divides the entire data into 16 bit chunks and adds them to calculate checksum
@@ -77,7 +80,7 @@ bool RUDPSocket::Connect(const std::string& ip, int port){
 
     while(!established && req_limit > 0){// Trying to establish a three way handshake before communicating
 
-        std::cout<<"Sending SYN...\n";
+        //std::cout<<"Sending SYN...\n";
 
         sendto(sockfd, &syn_pkt, sizeof(Header), 0, (const struct sockaddr *)&targetAddr, sizeof(targetAddr));//Sending the initial SYN packet
 
@@ -88,24 +91,24 @@ bool RUDPSocket::Connect(const std::string& ip, int port){
         int n = recvfrom(sockfd, &reply, sizeof(reply), 0, (struct sockaddr *)&targetAddr, &target_len);//Waiting for the subsequent SYN-ACK reply
 
         if(n > 0 && reply.header.flags == (SYN | ACK)){
-            std::cout << "Received SYN-ACK. Sending final ACK...\n";
+            //std::cout << "Received SYN-ACK. Sending final ACK...\n";
             Packet ack_pkt;
             memset(&ack_pkt, 0, sizeof(ack_pkt));
             ack_pkt.header.flags = ACK;
             
             sendto(sockfd, &ack_pkt, sizeof(Header), 0, (const struct sockaddr *)&targetAddr, sizeof(targetAddr));//Sending the final ACK response
             
-            std::cout << "Connection ESTABLISHED!" << std::endl;
+            //std::cout << "Connection ESTABLISHED!" << std::endl;
             established = true;
         }
         else{//Invoking Timeout if no Reply is received within the time limit
-            std::cout<<"ACK Timeout! Retransmitting SYN request"<<std::endl;
+            //std::cout<<"ACK Timeout! Retransmitting SYN request"<<std::endl;
             req_limit--;
         }
     }
 
     if(req_limit <= 0){//Ends the program if too many Timeouts occur
-        std::cout<<"Request Limit Exceeded! Could not connect to server\n";
+        //std::cout<<"Request Limit Exceeded! Could not connect to server\n";
         return false;
     }
 
@@ -117,13 +120,14 @@ void RUDPSocket::Attach(int socket_fd, struct sockaddr_in peer_addr){
     this->sockfd = socket_fd;
     this->targetAddr = peer_addr;
     this->target_len = sizeof(peer_addr);
+    this->own_sock = false;
 
     this->current_seq = 1;
     this->expected_seq = 1;
 
     setTimeout(1);
 
-    std::cout<<"[RUDP Socket] Successfully attached socket\n";
+    //std::cout<<"[RUDP Socket] Successfully attached socket\n";
 }
 
 bool RUDPSocket::Bind(int port){
@@ -137,7 +141,7 @@ bool RUDPSocket::Bind(int port){
 }
 
 bool RUDPSocket::Accept(){
-    std::cout<<"\nWaiting for Request"<<std::flush;
+    //std::cout<<"\nWaiting for Request"<<std::flush;
     Packet buffer;
     int n = 0;
     while(1){// Establishing a connection with the connection using a three way handshake
@@ -147,7 +151,7 @@ bool RUDPSocket::Accept(){
             uint8_t flags = buffer.header.flags; //Reading the flags from the received packet
 
             if(flags == SYN){ //If the packet is a SYN packet then we send an ACK back
-                std::cout<<"Received SYN. Sending SYN-ACK...\n";
+                //std::cout<<"Received SYN. Sending SYN-ACK...\n";
                 //std::this_thread::sleep_for(std::chrono::seconds(2));//Adding an artificial delay so the handshake process can be seen in real time
                 Packet reply;
                 memset(&reply, 0, sizeof(reply));
@@ -157,7 +161,7 @@ bool RUDPSocket::Accept(){
                 sendto(sockfd, &reply, sizeof(Header), 0, (struct sockaddr *)&targetAddr, target_len);
             }
             else if(flags == ACK || flags == DATA){ // IF the packet is an ACK packet then we establish the connection
-                std::cout<<"Received ACK. Connection Established\n";
+                //std::cout<<"Received ACK. Connection Established\n";
                 return true;
             }
         }
@@ -319,5 +323,5 @@ void RUDPSocket::EnableEncryption(const unsigned char* tx, const unsigned char* 
     memcpy(this->tx_key, tx, crypto_kx_SESSIONKEYBYTES);
     memcpy(this->rx_key, rx, crypto_kx_SESSIONKEYBYTES);
     this->secure_mode = true;
-    std::cout << "[RUDP] Secure Mode Enabled. All traffic is now encrypted." << std::endl;
+    //std::cout << "[RUDP] Secure Mode Enabled. All traffic is now encrypted." << std::endl;
 }

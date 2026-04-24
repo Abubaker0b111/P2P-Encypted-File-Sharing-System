@@ -15,6 +15,7 @@
 class RUDPSocket{
     private:
         int sockfd;
+        bool own_sock;
         struct sockaddr_in targetAddr;
         socklen_t target_len;
 
@@ -31,15 +32,19 @@ class RUDPSocket{
         RUDPSocket();
         ~RUDPSocket();
 
+        //Binds the socket to the provided port
         bool Bind(int port);
+        //Accepts incomming connection requests
         bool Accept();
-
+        //Establish reliable connection to a peer
         bool Connect(const std::string& ip, int port);
+        //Attach the reliable socket to a previously created socket
         void Attach(int socket_fd, struct sockaddr_in peer_addr);
-
+        //Sends data
         int Send(const char* data, size_t length);
+        //Receives data
         int Receive(char* buffer, size_t max_len);
-
+        //It's in the name
         void EnableEncryption(const unsigned char* tx, const unsigned char* rx);
 };
 
